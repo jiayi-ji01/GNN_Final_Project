@@ -1,5 +1,6 @@
 import numpy as np
 import pandas as pd
+from scipy.stats import norm
 
 from .config import PRIOR_BOUNDS, TIME_GRID
 from .workflow import from_unconstrained
@@ -24,6 +25,21 @@ def summarize_posterior_samples(beta_samples, gamma_samples):
         out[f"{name}_width50"] = float(q75 - q25)
         out[f"{name}_width90"] = float(q95 - q05)
     return out
+
+
+def wilson_interval(k, n, alpha=0.05):
+    if n <= 0:
+        return (np.nan, np.nan)
+    z = norm.ppf(1.0 - alpha / 2.0)
+    phat = k / n
+    denom = 1.0 + (z ** 2) / n
+    center = (phat + (z ** 2) / (2.0 * n)) / denom
+    half = (
+        z
+        * np.sqrt((phat * (1.0 - phat) / n) + (z ** 2) / (4.0 * n ** 2))
+        / denom
+    )
+    return float(max(0.0, center - half)), float(min(1.0, center + half))
 
 
 def evaluate_testset(
@@ -417,7 +433,13 @@ def summarize_predictive_curves(ppc_curves):
     }
 
 
-def compute_curve_discrepancy(observed_curve, predictive_median_curve, split_frac=0.5):
+def compute_curve_discrepancy(
+    observed_curve,
+    predictive_median_curve,
+    split_mode="fraction",
+    split_frac=0.5,
+    tau=None,
+):
     y_obs = np.asarray(observed_curve, dtype=float).reshape(-1)
     y_pred = np.asarray(predictive_median_curve, dtype=float).reshape(-1)
     if len(y_obs) != len(y_pred):
@@ -427,28 +449,42 @@ def compute_curve_discrepancy(observed_curve, predictive_median_curve, split_fra
     abs_err = np.abs(err)
     sq_err = err ** 2
     n = len(y_obs)
-    split_idx = int(np.floor(split_frac * n))
+    if split_mode == "fraction":
+        split_idx = int(np.floor(split_frac * n))
+    elif split_mode == "tau":
+        if tau is None:
+            raise ValueError("tau must be provided when split_mode='tau'.")
+        split_idx = int(tau)
+    else:
+        raise ValueError("split_mode must be either 'fraction' or 'tau'.")
+
     split_idx = min(max(split_idx, 1), n - 1)
 
-    err_early = err[:split_idx]
-    err_late = err[split_idx:]
-    abs_err_early = np.abs(err_early)
-    abs_err_late = np.abs(err_late)
-    sq_err_early = err_early ** 2
-    sq_err_late = err_late ** 2
+    err_first = err[:split_idx]
+    err_second = err[split_idx:]
+    abs_err_first = np.abs(err_first)
+    abs_err_second = np.abs(err_second)
+    sq_err_first = err_first ** 2
+    sq_err_second = err_second ** 2
 
     return {
         "curve_bias_full": float(np.mean(err)),
         "curve_mae_full": float(np.mean(abs_err)),
         "curve_rmse_full": float(np.sqrt(np.mean(sq_err))),
-        "curve_bias_early": float(np.mean(err_early)),
-        "curve_mae_early": float(np.mean(abs_err_early)),
-        "curve_rmse_early": float(np.sqrt(np.mean(sq_err_early))),
-        "curve_bias_late": float(np.mean(err_late)),
-        "curve_mae_late": float(np.mean(abs_err_late)),
-        "curve_rmse_late": float(np.sqrt(np.mean(sq_err_late))),
-        "late_minus_early_rmse": float(np.sqrt(np.mean(sq_err_late)) - np.sqrt(np.mean(sq_err_early))),
-        "late_minus_early_mae": float(np.mean(abs_err_late) - np.mean(abs_err_early)),
+        "curve_bias_first": float(np.mean(err_first)),
+        "curve_mae_first": float(np.mean(abs_err_first)),
+        "curve_rmse_first": float(np.sqrt(np.mean(sq_err_first))),
+        "curve_bias_second": float(np.mean(err_second)),
+        "curve_mae_second": float(np.mean(abs_err_second)),
+        "curve_rmse_second": float(np.sqrt(np.mean(sq_err_second))),
+        "second_minus_first_rmse": float(
+            np.sqrt(np.mean(sq_err_second)) - np.sqrt(np.mean(sq_err_first))
+        ),
+        "second_minus_first_mae": float(
+            np.mean(abs_err_second) - np.mean(abs_err_first)
+        ),
+        "split_mode": split_mode,
+        "split_idx": int(split_idx),
     }
 
 
@@ -460,6 +496,7 @@ def evaluate_curve_level_ppc(
     num_posterior_samples=1000,
     n_ppc_draws=100,
     seed=2026,
+    split_mode="fraction",
     split_frac=0.5,
 ):
     rng = np.random.default_rng(seed)
@@ -494,7 +531,14 @@ def evaluate_curve_level_ppc(
         pred_median_curve = curve_summary["median"]
         covered50_by_time = ((curve_summary["q25"] <= obs) & (obs <= curve_summary["q75"])).astype(float)
         covered90_by_time = ((curve_summary["q05"] <= obs) & (obs <= curve_summary["q95"])).astype(float)
-        disc = compute_curve_discrepancy(obs, pred_median_curve, split_frac=split_frac)
+        tau_for_split = case.get("tau", None) if split_mode == "tau" else None
+        disc = compute_curve_discrepancy(
+            obs,
+            pred_median_curve,
+            split_mode=split_mode,
+            split_frac=split_frac,
+            tau=tau_for_split,
+        )
 
         row = {
             "case_id": case_id,
@@ -514,14 +558,14 @@ def evaluate_curve_level_ppc(
         "curve_bias_full",
         "curve_mae_full",
         "curve_rmse_full",
-        "curve_bias_early",
-        "curve_mae_early",
-        "curve_rmse_early",
-        "curve_bias_late",
-        "curve_mae_late",
-        "curve_rmse_late",
-        "late_minus_early_rmse",
-        "late_minus_early_mae",
+        "curve_bias_first",
+        "curve_mae_first",
+        "curve_rmse_first",
+        "curve_bias_second",
+        "curve_mae_second",
+        "curve_rmse_second",
+        "second_minus_first_rmse",
+        "second_minus_first_mae",
     ]
 
     summary_rows = []
@@ -536,3 +580,25 @@ def evaluate_curve_level_ppc(
             "q95": float(np.quantile(vals, 0.95)),
         })
     return curve_case_df, pd.DataFrame(summary_rows)
+
+
+def evaluate_curve_level_ppc_tau_aligned(
+    workflow,
+    case_simulator,
+    predictive_curve_simulator,
+    n_test=100,
+    num_posterior_samples=1000,
+    n_ppc_draws=100,
+    seed=2031,
+):
+    return evaluate_curve_level_ppc(
+        workflow=workflow,
+        case_simulator=case_simulator,
+        predictive_curve_simulator=predictive_curve_simulator,
+        n_test=n_test,
+        num_posterior_samples=num_posterior_samples,
+        n_ppc_draws=n_ppc_draws,
+        seed=seed,
+        split_mode="tau",
+        split_frac=0.5,
+    )

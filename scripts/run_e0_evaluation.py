@@ -1,4 +1,10 @@
 import os
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 from src.config import E0_OUTPUT_DIR, setup_environment
 from src.experiments import run_E0_evaluation

@@ -1,3 +1,5 @@
+import math
+
 import numpy as np
 
 from .config import EPS, PRIOR_BOUNDS
@@ -44,14 +46,53 @@ def make_training_simulator(train_rng):
     return sim_one
 
 
-def build_workflow(simulator):
+def _build_diag_gaussian_inference_network(bf, keras):
+    from bayesflow.networks.inference.scoring.scoring_rules.parametric_distribution_score import (
+        ParametricDistributionScore,
+    )
+
+    class DiagonalNormalScore(ParametricDistributionScore):
+        def __init__(self, dim=None):
+            super().__init__(links={"std": "softplus"})
+            self.dim = dim
+
+        def get_config(self):
+            return super().get_config() | {"dim": self.dim}
+
+        def get_head_shapes_from_target_shape(self, target_shape):
+            self.dim = target_shape[-1]
+            return {"mean": (self.dim,), "std": (self.dim,)}
+
+        def log_prob(self, x, mean, std):
+            log_two_pi = keras.ops.convert_to_tensor(math.log(2.0 * math.pi), dtype=keras.ops.dtype(mean))
+            z = (x - mean) / std
+            return -0.5 * keras.ops.sum((z ** 2) + log_two_pi + 2.0 * keras.ops.log(std), axis=-1)
+
+        def sample(self, batch_shape, mean, std):
+            eps = keras.random.normal(keras.ops.shape(mean))
+            return mean + std * eps
+
+    return bf.networks.inference.scoring.scoring_rule_network.ScoringRuleNetwork(
+        scoring_rules={"diag_gaussian": DiagonalNormalScore()},
+        subnet="mlp",
+    )
+
+
+def build_workflow(simulator, posterior_family="flow"):
     bf, keras = _require_workflow_backend()
+    if posterior_family == "flow":
+        inference_network = "coupling_flow"
+    elif posterior_family == "diag_gaussian":
+        inference_network = _build_diag_gaussian_inference_network(bf, keras)
+    else:
+        raise ValueError("posterior_family must be one of {'flow', 'diag_gaussian'}.")
+
     workflow = bf.BasicWorkflow(
         simulator=simulator,
         inference_variables=["z_beta", "z_gamma"],
         summary_variables=["obs"],
         summary_network="time_series_network",
-        inference_network="coupling_flow",
+        inference_network=inference_network,
     )
     workflow.approximator.compile(
         optimizer=keras.optimizers.Adam(learning_rate=5e-4)
@@ -59,14 +100,14 @@ def build_workflow(simulator):
     return workflow
 
 
-def train_workflow(epochs=12, batch_size=32, num_batches=60, seed=42):
+def train_workflow(epochs=12, batch_size=32, num_batches=60, seed=42, posterior_family="flow"):
     bf, keras = _require_workflow_backend()
     np.random.seed(seed)
     keras.utils.set_random_seed(seed)
     train_rng = np.random.default_rng(seed)
     sim_one = make_training_simulator(train_rng)
     simulator = bf.make_simulator(sim_one)
-    workflow = build_workflow(simulator)
+    workflow = build_workflow(simulator, posterior_family=posterior_family)
     history = workflow.approximator.fit(
         simulator=simulator,
         epochs=epochs,
@@ -79,11 +120,18 @@ def train_workflow(epochs=12, batch_size=32, num_batches=60, seed=42):
 
 
 def sample_posterior(workflow, obs, num_samples=2000):
-    samples = workflow.sample(
-        num_samples=num_samples,
-        conditions={"obs": obs[None, ...]},
-        split=True,
-    )
+    try:
+        samples = workflow.sample(
+            num_samples=num_samples,
+            conditions={"obs": obs[None, ...]},
+            split=True,
+        )
+    except NotImplementedError:
+        samples = workflow.sample(
+            num_samples=num_samples,
+            conditions={"obs": obs[None, ...]},
+            split=False,
+        )
     z_beta_samps = np.asarray(samples["z_beta"]).reshape(-1)
     z_gamma_samps = np.asarray(samples["z_gamma"]).reshape(-1)
     beta_samps = from_unconstrained(z_beta_samps, *PRIOR_BOUNDS["beta"])

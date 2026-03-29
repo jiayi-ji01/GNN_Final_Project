@@ -1,0 +1,7 @@
+severity,beta_ref_mode,beta_bias_median,beta_empirical_90,R0_empirical_90
+mild,infection_weighted,0.016965575701726746,0.84,0.86
+medium,infection_weighted,0.05588336778388195,0.61,0.7
+strong,infection_weighted,0.1039570947236038,0.48,0.56
+mild,time_avg,0.029618467161076988,0.77,0.81
+medium,time_avg,0.10452068725293502,0.33,0.36
+strong,time_avg,0.2091523302956932,0.23,0.19

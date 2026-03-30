@@ -443,29 +443,6 @@ def build_E1_reference_ablation_summary(
     return summary_df.sort_values("reference_mode").reset_index(drop=True)
 
 
-def build_E1_posterior_family_ablation_summary(
-    flow_recovery_df_E1,
-    flow_coverage_df_E1,
-    flow_feature_summary_df_E1,
-    diag_recovery_df_E1,
-    diag_coverage_df_E1,
-    diag_feature_summary_df_E1,
-):
-    summary_df = _build_E1_compact_summary_rows(
-        [
-            ("flow", flow_recovery_df_E1, flow_coverage_df_E1, flow_feature_summary_df_E1),
-            ("diag_gaussian", diag_recovery_df_E1, diag_coverage_df_E1, diag_feature_summary_df_E1),
-        ],
-        key_name="posterior_family",
-    )
-    summary_df["posterior_family"] = pd.Categorical(
-        summary_df["posterior_family"],
-        categories=["flow", "diag_gaussian"],
-        ordered=True,
-    )
-    return summary_df.sort_values("posterior_family").reset_index(drop=True)
-
-
 def build_E1_results_report(recovery_df, coverage_df, feature_summary_df, curve_summary_df):
     beta_bias = extract_single_value(recovery_df, "quantity", "beta", "bias_median_est")
     gamma_bias = extract_single_value(recovery_df, "quantity", "gamma", "bias_median_est")

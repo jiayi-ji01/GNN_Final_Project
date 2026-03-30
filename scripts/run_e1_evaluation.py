@@ -9,7 +9,6 @@ if str(ROOT) not in sys.path:
 from src.config import (
     E1_OUTPUT_DIR,
     get_e1_curve_level_output_dir,
-    get_e1_posterior_family_ablation_output_dir,
     get_e1_reference_ablation_output_dir,
     get_e1_severity_output_dir,
     get_e1_severity_summary_output_dir,
@@ -17,7 +16,6 @@ from src.config import (
 )
 from src.diagnostics import evaluate_curve_level_ppc
 from src.experiments import (
-    build_E1_posterior_family_ablation_summary,
     build_E1_reference_ablation_summary,
     build_E1_results_report,
     build_E1_severity_summary,
@@ -228,51 +226,6 @@ def main():
         group_col="reference_mode",
         title_prefix="E1 reference ablation",
         out_path=f"{reference_dir}/E1_ablation_reference_comparison.png",
-    )
-
-    workflow_diag, _ = train_workflow(seed=42, posterior_family="diag_gaussian")
-    posterior_outputs = {}
-    for posterior_family, workflow in [("flow", workflow_flow), ("diag_gaussian", workflow_diag)]:
-        result = run_E1_evaluation(
-            workflow=workflow,
-            severity="medium",
-            reference_mode="full_curve",
-            n_test=100,
-            num_posterior_samples=2000,
-            n_ppc_draws=100,
-            seed=2026,
-        )
-        posterior_outputs[posterior_family] = {
-            "case_df": result[0],
-            "recovery_df": result[1],
-            "coverage_df": result[2],
-            "feature_case_df": result[3],
-            "feature_summary_df": result[4],
-        }
-        out_dir = get_e1_posterior_family_ablation_output_dir(posterior_family)
-        os.makedirs(out_dir, exist_ok=True)
-        result[0].to_csv(f"{out_dir}/E1_case_level.csv", index=False)
-        result[1].to_csv(f"{out_dir}/E1_recovery_summary.csv", index=False)
-        result[2].to_csv(f"{out_dir}/E1_coverage_summary.csv", index=False)
-        result[3].to_csv(f"{out_dir}/E1_ppc_feature_case_level.csv", index=False)
-        result[4].to_csv(f"{out_dir}/E1_ppc_feature_summary.csv", index=False)
-
-    posterior_summary_df = build_E1_posterior_family_ablation_summary(
-        flow_recovery_df_E1=posterior_outputs["flow"]["recovery_df"],
-        flow_coverage_df_E1=posterior_outputs["flow"]["coverage_df"],
-        flow_feature_summary_df_E1=posterior_outputs["flow"]["feature_summary_df"],
-        diag_recovery_df_E1=posterior_outputs["diag_gaussian"]["recovery_df"],
-        diag_coverage_df_E1=posterior_outputs["diag_gaussian"]["coverage_df"],
-        diag_feature_summary_df_E1=posterior_outputs["diag_gaussian"]["feature_summary_df"],
-    )
-    posterior_dir = get_e1_posterior_family_ablation_output_dir()
-    os.makedirs(posterior_dir, exist_ok=True)
-    posterior_summary_df.to_csv(f"{posterior_dir}/E1_ablation_posterior_family_summary.csv", index=False)
-    plot_E1_ablation_comparison(
-        posterior_summary_df,
-        group_col="posterior_family",
-        title_prefix="E1 posterior-family ablation",
-        out_path=f"{posterior_dir}/E1_ablation_posterior_family_comparison.png",
     )
 
     print(recovery_df.round(4))

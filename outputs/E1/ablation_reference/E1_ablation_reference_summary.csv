@@ -1,0 +1,3 @@
+reference_mode,beta_bias_median,beta_MAE,R0_MAE,beta_empirical_90,gamma_empirical_90,R0_empirical_90,peak_time_MAE,early_growth_slope_empirical_50
+full_curve,0.041413966777221194,0.04924413829350528,0.1677401966644392,0.73,0.84,1.0,7.11,0.48
+early_phase,0.09753318585538934,0.12871852216886376,0.797616104878523,0.36,0.36,0.55,6.91,0.47

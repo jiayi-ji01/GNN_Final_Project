@@ -1,4 +1,5 @@
 import math
+import importlib
 
 import numpy as np
 
@@ -46,12 +47,65 @@ def make_training_simulator(train_rng):
     return sim_one
 
 
-def _build_diag_gaussian_inference_network(bf, keras):
-    from bayesflow.networks.inference.scoring.scoring_rules.parametric_distribution_score import (
-        ParametricDistributionScore,
+def _resolve_bayesflow_scoring_class(bf, class_name):
+    if hasattr(bf, "networks") and hasattr(bf.networks, "ScoringRuleNetwork"):
+        globals_dict = getattr(getattr(bf.networks.ScoringRuleNetwork, "__init__", None), "__globals__", {})
+        resolved = globals_dict.get(class_name)
+        if resolved is not None:
+            return resolved
+
+    candidate_modules = []
+
+    if hasattr(bf, "scoring_rules"):
+        candidate_modules.append("bayesflow.scoring_rules")
+
+    if hasattr(bf, "networks") and hasattr(bf.networks, "ScoringRuleNetwork"):
+        network_module = getattr(bf.networks.ScoringRuleNetwork, "__module__", "")
+        if network_module:
+            scoring_module = network_module.rsplit(".", 1)[0] + ".scoring_rules"
+            candidate_modules.append(scoring_module)
+
+    candidate_modules.extend(
+        [
+            "bayesflow.networks.inference.scoring.scoring_rules",
+            "bayesflow.networks.scoring.scoring_rules",
+        ]
     )
 
-    class DiagonalNormalScore(ParametricDistributionScore):
+    seen = set()
+    for module_name in candidate_modules:
+        if module_name in seen:
+            continue
+        seen.add(module_name)
+        try:
+            module = importlib.import_module(module_name)
+        except ModuleNotFoundError:
+            continue
+
+        resolved = getattr(module, class_name, None)
+        if resolved is not None:
+            return resolved
+
+    return None
+
+
+def _build_diag_gaussian_inference_network(bf, keras):
+    ParametricDistributionScore = _resolve_bayesflow_scoring_class(bf, "ParametricDistributionScore")
+    ScoringRule = _resolve_bayesflow_scoring_class(bf, "ScoringRule")
+
+    if ParametricDistributionScore is not None:
+        score_base = ParametricDistributionScore
+        use_custom_score = False
+    elif ScoringRule is not None:
+        score_base = ScoringRule
+        use_custom_score = True
+    else:
+        raise RuntimeError(
+            "Could not resolve a BayesFlow scoring-rule base class for "
+            "`posterior_family='diag_gaussian'` in this environment."
+        )
+
+    class DiagonalNormalScore(score_base):
         def __init__(self, dim=None):
             super().__init__(links={"std": "softplus"})
             self.dim = dim
@@ -72,7 +126,16 @@ def _build_diag_gaussian_inference_network(bf, keras):
             eps = keras.random.normal(keras.ops.shape(mean))
             return mean + std * eps
 
-    return bf.networks.inference.scoring.scoring_rule_network.ScoringRuleNetwork(
+        if use_custom_score:
+            def score(self, estimates, targets, weights=None):
+                scores = -self.log_prob(x=targets, **estimates)
+                if weights is None:
+                    return keras.ops.mean(scores)
+
+                weights = keras.ops.cast(weights, keras.ops.dtype(scores))
+                return keras.ops.sum(scores * weights) / keras.ops.sum(weights)
+
+    return bf.networks.ScoringRuleNetwork(
         scoring_rules={"diag_gaussian": DiagonalNormalScore()},
         subnet="mlp",
     )

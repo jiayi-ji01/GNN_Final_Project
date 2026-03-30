@@ -9,19 +9,19 @@
 ## Key Findings
 
 - Posterior median bias:
-  - beta: -0.2065
-  - gamma: -0.0401
-  - R0: -0.8303
+  - beta: 0.0216
+  - gamma: 0.0390
+  - R0: 0.0000
 - Empirical 90% coverage:
-  - beta: 0.3000
-  - gamma: 0.5600
-  - R0: 0.4100
+  - beta: 0.7900
+  - gamma: 0.8500
+  - R0: 0.9500
 - Feature-level PPC:
-  - peak_time empirical 90% coverage: 0.9200
-  - early_growth_slope empirical 50% coverage: 0.4800
+  - peak_time empirical 90% coverage: 0.9500
+  - early_growth_slope empirical 50% coverage: 0.4500
 - Curve-level PPC:
-  - mean full-curve RMSE: 0.0198
-  - mean pointwise empirical 90% coverage: 0.9282
+  - mean full-curve RMSE: 0.0214
+  - mean pointwise empirical 90% coverage: 0.9414
 
 ## Interpretation
 

@@ -81,13 +81,6 @@ def get_e1_reference_ablation_output_dir(reference_mode=None):
     return os.path.join(base_dir, reference_mode)
 
 
-def get_e1_posterior_family_ablation_output_dir(posterior_family=None):
-    base_dir = os.path.join(E1_OUTPUT_DIR, "ablation_posterior_family")
-    if posterior_family is None:
-        return base_dir
-    return os.path.join(base_dir, posterior_family)
-
-
 def get_e2_severity_output_dir(severity):
     return os.path.join(E2_OUTPUT_DIR, severity)
 
